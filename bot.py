@@ -77,9 +77,6 @@ def webhook():
     if not data:
         return "OK"
 
-    # ======================
-    # MESSAGE CHECK
-    # ======================
     if "message" not in data:
         return "OK"
 
@@ -100,7 +97,7 @@ def webhook():
         return "OK"
 
     # ======================
-    # BUY (FIXED INDENTATION BUG)
+    # BUY
     # ======================
     if text == "/buy":
         with open("qr.png", "rb") as f:
@@ -119,7 +116,7 @@ def webhook():
         return "OK"
 
     # ======================
-    # GROUP CONNECT (FIXED LOGIC - NO SPAM)
+    # GROUP CONNECT
     # ======================
     if text == "/connect" and chat_type in ["group", "supergroup"]:
 
@@ -139,7 +136,7 @@ def webhook():
         return "OK"
 
     # ======================
-    # CALLBACK (GROUP SAVE)
+    # CALLBACK
     # ======================
     if "callback_query" in data:
         cq = data["callback_query"]
@@ -154,6 +151,7 @@ def webhook():
             save_users(users)
 
             send_message(user_id_cb, "✅ Group Connected Successfully!")
+
         return "OK"
 
     # ======================
@@ -175,13 +173,26 @@ def webhook():
     # ======================
     # FORWARD SYSTEM
     # ======================
+
+    # TEXT
     if text:
         send_message(group_id, text)
 
+    # PHOTO + ADMIN NOTIFY (FIX ADDED HERE)
     elif "photo" in msg:
+
+        file_id = msg["photo"][-1]["file_id"]
+
+        # send to group
         requests.post(API + "/sendPhoto", json={
             "chat_id": group_id,
-            "photo": msg["photo"][-1]["file_id"]
+            "photo": file_id
+        })
+
+        # 🔥 ADMIN NOTIFICATION (FIX)
+        requests.post(API + "/sendMessage", json={
+            "chat_id": ADMIN_ID,
+            "text": f"💰 New Photo Sent\nUser: {user_id}"
         })
 
     elif "video" in msg:
