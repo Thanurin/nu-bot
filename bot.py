@@ -38,7 +38,6 @@ def send_message(chat_id, text, reply_markup=None):
     payload = {"chat_id": chat_id, "text": text}
     if reply_markup:
         payload["reply_markup"] = json.dumps(reply_markup)
-
     requests.post(API + "/sendMessage", json=payload)
 
 
@@ -48,7 +47,6 @@ def send_photo(chat_id, file_id, caption=None, reply_markup=None):
         payload["caption"] = caption
     if reply_markup:
         payload["reply_markup"] = json.dumps(reply_markup)
-
     requests.post(API + "/sendPhoto", json=payload)
 
 
@@ -89,14 +87,14 @@ def webhook():
     users = load_users()
 
     # =====================================================
-    # 1. CALLBACK (IMPORTANT FIRST)
+    # CALLBACK FIRST
     # =====================================================
     if "callback_query" in data:
         cq = data["callback_query"]
         user_id_cb = cq["from"]["id"]
         cb_data = cq["data"]
 
-        # ---- APPROVE USER ----
+        # APPROVE USER
         if cb_data.startswith("approve:"):
             _, user_id, plan = cb_data.split(":")
 
@@ -112,18 +110,29 @@ def webhook():
                 send_message(ADMIN_ID, "❌ Invalid plan")
                 return "OK"
 
-            users[str(user_id)] = {"expiry": expiry.isoformat()}
+            uid = str(user_id)
+
+            # 🔥 FIX: DO NOT DELETE EXISTING DATA
+            if uid not in users:
+                users[uid] = {}
+
+            users[uid]["expiry"] = expiry.isoformat()
+
             save_users(users)
 
             send_message(user_id, f"✅ Approved!\nPlan: {plan}")
             send_message(ADMIN_ID, "✅ User approved")
 
-        # ---- CONNECT GROUP ----
+        # CONNECT GROUP
         if cb_data.startswith("group:"):
             group_id = int(cb_data.split(":")[1])
 
-            users[str(user_id_cb)] = users.get(str(user_id_cb), {})
-            users[str(user_id_cb)]["group_id"] = group_id
+            uid = str(user_id_cb)
+
+            if uid not in users:
+                users[uid] = {}
+
+            users[uid]["group_id"] = group_id
             save_users(users)
 
             send_message(user_id_cb, "✅ Group Connected Successfully!")
@@ -131,7 +140,7 @@ def webhook():
         return "OK"
 
     # =====================================================
-    # 2. MESSAGE CHECK
+    # MESSAGE
     # =====================================================
     if "message" not in data:
         return "OK"
@@ -143,16 +152,12 @@ def webhook():
     text = msg.get("text", "")
     chat_type = msg["chat"]["type"]
 
-    # ======================
     # START
-    # ======================
     if text == "/start":
         send_message(chat_id, "🇰🇭 សួស្តី!\n👉 /buy")
         return "OK"
 
-    # ======================
     # BUY
-    # ======================
     if text == "/buy":
         with open("qr.png", "rb") as f:
             requests.post(API + "/sendPhoto",
@@ -164,11 +169,8 @@ def webhook():
             )
         return "OK"
 
-    # =====================================================
-    # 3. 📸 SCREENSHOT HANDLER (FIXED - ALWAYS WORKS)
-    # =====================================================
+    # SCREENSHOT → ADMIN + BUTTON
     if "photo" in msg:
-
         file_id = msg["photo"][-1]["file_id"]
 
         keyboard = {
@@ -193,9 +195,7 @@ def webhook():
 
         return "OK"
 
-    # =====================================================
-    # 4. GROUP CONNECT BUTTON
-    # =====================================================
+    # CONNECT GROUP
     if text == "/connect" and chat_type in ["group", "supergroup"]:
         keyboard = {
             "inline_keyboard": [[
@@ -206,9 +206,7 @@ def webhook():
         send_message(chat_id, "👥 Connect group?", reply_markup=keyboard)
         return "OK"
 
-    # =====================================================
-    # 5. FORWARD SYSTEM
-    # =====================================================
+    # FORWARD SYSTEM
     if not has_active_plan(user_id):
         send_message(chat_id, "❌ Plan expired /buy")
         return "OK"
