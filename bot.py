@@ -69,7 +69,7 @@ def has_active_plan(user_id):
 
 
 # ======================
-# AUTO GROUP DETECT (NEW)
+# AUTO GROUP DETECT (FIXED)
 # ======================
 def auto_save_group(users, user_id, chat_id, chat_type):
     if chat_type in ["group", "supergroup"]:
@@ -78,10 +78,19 @@ def auto_save_group(users, user_id, chat_id, chat_type):
         if uid not in users:
             users[uid] = {}
 
-        # ONLY SAVE IF NOT EXISTS (prevents overwrite spam)
+        # save only first group (avoid spam overwrite)
         if "group_id" not in users[uid]:
             users[uid]["group_id"] = chat_id
             save_users(users)
+
+            # 🔥 notify user (ONLY ONCE)
+            try:
+                send_message(
+                    user_id,
+                    "✅ The connection has successfully been completed"
+                )
+            except:
+                pass
 
 
 # ======================
@@ -103,15 +112,14 @@ def webhook():
 
     users = load_users()
 
-    # =====================================================
+    # ======================
     # CALLBACK FIRST
-    # =====================================================
+    # ======================
     if "callback_query" in data:
         cq = data["callback_query"]
         user_id_cb = cq["from"]["id"]
         cb_data = cq["data"]
 
-        # APPROVE USER
         if cb_data.startswith("approve:"):
             _, user_id, plan = cb_data.split(":")
 
@@ -140,9 +148,9 @@ def webhook():
 
         return "OK"
 
-    # =====================================================
+    # ======================
     # MESSAGE
-    # =====================================================
+    # ======================
     if "message" not in data:
         return "OK"
 
@@ -153,15 +161,19 @@ def webhook():
     text = msg.get("text", "")
     chat_type = msg["chat"]["type"]
 
-    # 🔥 AUTO SAVE GROUP (ADDED HERE - IMPORTANT)
+    # 🔥 AUTO GROUP SAVE + NOTIFY USER
     auto_save_group(users, user_id, chat_id, chat_type)
 
+    # ======================
     # START
+    # ======================
     if text == "/start":
         send_message(chat_id, "🇰🇭 សួស្តី!\n👉 /buy")
         return "OK"
 
+    # ======================
     # BUY
+    # ======================
     if text == "/buy":
         with open("qr.png", "rb") as f:
             requests.post(API + "/sendPhoto",
@@ -178,7 +190,9 @@ def webhook():
             )
         return "OK"
 
+    # ======================
     # SCREENSHOT → ADMIN
+    # ======================
     if "photo" in msg:
         file_id = msg["photo"][-1]["file_id"]
 
@@ -203,7 +217,9 @@ def webhook():
         send_photo(ADMIN_ID, file_id)
         return "OK"
 
+    # ======================
     # FORWARD SYSTEM
+    # ======================
     user_data = users.get(str(user_id), {})
     group_id = user_data.get("group_id")
 
