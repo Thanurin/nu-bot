@@ -157,17 +157,25 @@ def webhook():
         send_message(chat_id, "🇰🇭 សួស្តី!\n👉 /buy")
         return "OK"
 
-    # BUY
-    if text == "/buy":
-        with open("qr.png", "rb") as f:
-            requests.post(API + "/sendPhoto",
-                data={
-                    "chat_id": chat_id,
-                    "caption": "💳 Send payment screenshot after paying"
-                },
-                files={"photo": f}
-            )
-        return "OK"
+if text == "/buy":
+    with open("qr.png", "rb") as f:
+        requests.post(API + "/sendPhoto",
+            data={
+                "chat_id": chat_id,
+                "caption":
+                    "💳 PREMIUM PLANS\n\n"
+                    "🥉 1. WEEK PLAN\n"
+                    "💲 3$ / week\n\n"
+                    "🥈 2. MONTH PLAN\n"
+                    "💲 11.5$ / month\n\n"
+                    "🥇 3. YEAR PLAN\n"
+                    "💲 120$ / year\n\n"
+                    "📸 After payment, send screenshot here\n"
+                    "⏳ Admin will approve manually"
+            },
+            files={"photo": f}
+        )
+    return "OK"
 
     # SCREENSHOT → ADMIN + BUTTON
     if "photo" in msg:
