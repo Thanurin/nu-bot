@@ -16,7 +16,7 @@ ADMIN_ID = int(os.getenv("ADMIN_ID"))
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
 bot = Bot(token=TOKEN)
-app = Flask(**name**)
+app = Flask(__name__)
 
 USERS_FILE = "users.json"
 
