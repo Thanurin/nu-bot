@@ -19,7 +19,7 @@ app = Flask(__name__)
 USERS_FILE = "users.json"
 
 # =========================
-# INIT USERS FILE
+# CREATE FILE IF NOT EXISTS
 # =========================
 
 if not os.path.exists(USERS_FILE):
@@ -53,8 +53,7 @@ def has_active_plan(user_id):
     if not expiry:
         return False
 
-    expiry_date = datetime.fromisoformat(expiry)
-    return datetime.now() < expiry_date
+    return datetime.now() < datetime.fromisoformat(expiry)
 
 # =========================
 # HOME ROUTE
@@ -70,7 +69,6 @@ def home():
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
-
     data = request.get_json(force=True)
     update = Update.de_json(data, bot)
 
@@ -83,57 +81,58 @@ def webhook():
 
     users = load_users()
 
-    # =========================
-    # START COMMAND
-    # =========================
-
+    # ================= START =================
     if text == "/start":
         bot.send_message(
             chat_id=user_id,
-            text="សួស្តី! 👋\nវាយ /buy ដើម្បីទិញគម្រោង"
+            text="👋 សួស្តី!\n\nសូមវាយ /buy ដើម្បីមើលគម្រោង និងចាប់ផ្តើមប្រើប្រាស់បូត ❤️"
         )
         return "OK"
 
-    # =========================
-    # BUY COMMAND
-    # =========================
-
+    # ================= BUY =================
     if text == "/buy":
         bot.send_message(
             chat_id=user_id,
             text=(
-                "📦 Plans:\n"
-                "1. 3$/week\n"
-                "2. 11.5$/month\n"
-                "3. 120$/year\n\n"
-                "📸 Send payment screenshot after payment."
+                "💰 គម្រោងរបស់យើង៖\n\n"
+                "1️⃣ 3$ / 7 ថ្ងៃ\n"
+                "2️⃣ 11.5$ / 30 ថ្ងៃ\n"
+                "3️⃣ 120$ / 1 ឆ្នាំ\n\n"
+                "📌 សូមស្កេន QR បង់ប្រាក់\n"
+                "📸 បន្ទាប់មកផ្ញើ Screenshot មកខ្ញុំ"
             )
         )
         return "OK"
 
-    # =========================
-    # PAYMENT SCREENSHOT
-    # =========================
-
+    # ================= PAYMENT SCREENSHOT =================
     if msg.photo:
+        photo_id = msg.photo[-1].file_id
+
         bot.send_message(
             chat_id=ADMIN_ID,
-            text=f"💰 NEW PAYMENT PROOF\nUSER ID: {user_id}\nNAME: {msg.from_user.first_name}"
+            text=f"📥 មានការបង់ប្រាក់ថ្មី\n\nUser ID: {user_id}"
+        )
+
+        bot.send_photo(
+            chat_id=ADMIN_ID,
+            photo=photo_id
         )
 
         bot.send_message(
             chat_id=user_id,
-            text="⏳ Please wait for admin approval..."
+            text="⏳ សូមរង់ចាំ Admin អនុម័តការបង់ប្រាក់ ❤️"
         )
         return "OK"
 
-    # =========================
-    # ADMIN APPROVE
-    # =========================
+    # ================= APPROVE =================
+    if text.startswith("/approve"):
+        if user_id != ADMIN_ID:
+            return "OK"
 
-    if text.startswith("/approve") and user_id == ADMIN_ID:
         try:
-            _, target_id, plan = text.split()
+            parts = text.split()
+            target_id = parts[1]
+            plan = parts[2]
 
             now = datetime.now()
 
@@ -144,51 +143,57 @@ def webhook():
             elif plan == "year":
                 expiry = now + timedelta(days=365)
             else:
-                bot.send_message(chat_id=ADMIN_ID, text="Invalid plan")
+                bot.send_message(chat_id=ADMIN_ID, text="❌ Plan មិនត្រឹមត្រូវ")
                 return "OK"
 
-            users[target_id] = {
-                "expiry": expiry.isoformat()
-            }
+            if target_id not in users:
+                users[target_id] = {}
 
+            users[target_id]["expiry"] = expiry.isoformat()
             save_users(users)
 
             bot.send_message(
                 chat_id=int(target_id),
-                text=f"✅ APPROVED!\nPlan: {plan}\nExpiry: {expiry.date()}"
+                text=(
+                    "✅ ការទូទាត់ត្រូវបានអនុម័ត!\n\n"
+                    f"📦 Plan: {plan}\n"
+                    f"📅 ផុតកំណត់: {expiry.strftime('%Y-%m-%d')}\n\n"
+                    "🎉 សូមអរគុណ!"
+                )
             )
 
-            bot.send_message(
-                chat_id=ADMIN_ID,
-                text="Approved successfully ✅"
-            )
+            bot.send_message(chat_id=ADMIN_ID, text="✅ Approved success")
 
         except Exception as e:
             bot.send_message(chat_id=ADMIN_ID, text=str(e))
 
         return "OK"
 
-    # =========================
-    # BLOCK IF NO PLAN
-    # =========================
-
+    # ================= EXPIRED CHECK =================
     if not has_active_plan(user_id):
         bot.send_message(
             chat_id=user_id,
-            text="❌ Your plan expired. Use /buy to continue."
+            text=(
+                "❌ គម្រោងរបស់អ្នកបានផុតកំណត់\n\n"
+                "👉 សូមវាយ /buy ដើម្បីបន្តប្រើប្រាស់"
+            )
         )
         return "OK"
+
+    # ================= DEFAULT RESPONSE =================
+    bot.send_message(
+        chat_id=user_id,
+        text="✅ អ្នកអាចប្រើបូតបានហើយ!"
+    )
 
     return "OK"
 
 # =========================
-# START APP
+# START SERVER
 # =========================
 
 if __name__ == "__main__":
-
     if WEBHOOK_URL:
-        bot.set_webhook(url=f"{WEBHOOK_URL}/webhook")
-        print("WEBHOOK SET")
+        bot.set_webhook(f"{WEBHOOK_URL}/webhook")
 
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
