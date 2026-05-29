@@ -1,7 +1,7 @@
 import os
 import json
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime
 from flask import Flask, request
 
 TOKEN = os.getenv("BOT_TOKEN")
@@ -74,26 +74,12 @@ def home():
 @app.route("/webhook", methods=["POST"])
 def webhook():
     data = request.get_json()
-
-    # ----------------------
-    # CALLBACK HANDLER FIRST
-    # ----------------------
-    if "callback_query" in data:
-        cq = data["callback_query"]
-        user_id = cq["from"]["id"]
-        data_cb = cq["data"]
-
-        if data_cb.startswith("connect_group:"):
-            group_id = int(data_cb.split(":")[1])
-
-            users = load_users()
-            users[str(user_id)] = users.get(str(user_id), {})
-            users[str(user_id)]["group_id"] = group_id
-            save_users(users)
-
-            send_message(user_id, "✅ Group Connected Successfully!")
+    if not data:
         return "OK"
 
+    # ======================
+    # MESSAGE CHECK
+    # ======================
     if "message" not in data:
         return "OK"
 
@@ -102,95 +88,108 @@ def webhook():
     user_id = msg["from"]["id"]
     chat_id = msg["chat"]["id"]
     text = msg.get("text", "")
+    chat_type = msg["chat"]["type"]
 
     users = load_users()
-    user_key = str(user_id)
 
     # ======================
     # START
     # ======================
     if text == "/start":
-        send_message(chat_id,
-            "🇰🇭 សួស្តី!\n\n👉 វាយ /buy ដើម្បីចាប់ផ្តើម")
+        send_message(chat_id, "🇰🇭 សួស្តី!\n\n👉 វាយ /buy ដើម្បីចាប់ផ្តើម")
         return "OK"
 
     # ======================
-    # BUY
+    # BUY (FIXED INDENTATION BUG)
     # ======================
-if text == "/buy":
-    with open("qr.png", "rb") as f:
-        requests.post(API + "/sendPhoto",
-            data={
-                "chat_id": chat_id,
-                "caption":
-                    "💳 គម្រោង:\n\n"
-                    "1. 3$ / week\n"
-                    "2. 11.5$ / month\n"
-                    "3. 120$ / year\n\n"
-                    "ផ្ញើ Screenshot មក Admin ❤️"
-            },
-            files={"photo": f}
-        )
-    return "OK"
+    if text == "/buy":
+        with open("qr.png", "rb") as f:
+            requests.post(API + "/sendPhoto",
+                data={
+                    "chat_id": chat_id,
+                    "caption":
+                        "💳 គម្រោង:\n\n"
+                        "1. 3$ / week\n"
+                        "2. 11.5$ / month\n"
+                        "3. 120$ / year\n\n"
+                        "ផ្ញើ Screenshot មក Admin ❤️"
+                },
+                files={"photo": f}
+            )
+        return "OK"
 
     # ======================
-    # AUTO DETECT GROUP (NO -100 INPUT)
+    # GROUP CONNECT (FIXED LOGIC - NO SPAM)
     # ======================
-    if msg["chat"]["type"] in ["group", "supergroup"]:
-
-        group_id = chat_id
+    if text == "/connect" and chat_type in ["group", "supergroup"]:
 
         keyboard = {
-            "inline_keyboard": [
-                [
-                    {
-                        "text": "✅ Connect This Group",
-                        "callback_data": f"connect_group:{group_id}"
-                    }
-                ]
-            ]
+            "inline_keyboard": [[
+                {
+                    "text": "✅ Connect This Group",
+                    "callback_data": f"connect:{chat_id}"
+                }
+            ]]
         }
 
-        send_message(
-            chat_id,
-            "🤖 Bot detected this group\n\nចុចប៊ូតុងខាងក្រោមដើម្បីភ្ជាប់ group 👇",
+        send_message(chat_id,
+            "🤖 Bot detected this group\nចុចប៊ូតុងខាងក្រោមដើម្បីភ្ជាប់ 👇",
             reply_markup=keyboard
         )
-
         return "OK"
 
     # ======================
-    # FORWARD SYSTEM
+    # CALLBACK (GROUP SAVE)
+    # ======================
+    if "callback_query" in data:
+        cq = data["callback_query"]
+        user_id_cb = cq["from"]["id"]
+        cb_data = cq["data"]
+
+        if cb_data.startswith("connect:"):
+            group_id = int(cb_data.split(":")[1])
+
+            users[str(user_id_cb)] = users.get(str(user_id_cb), {})
+            users[str(user_id_cb)]["group_id"] = group_id
+            save_users(users)
+
+            send_message(user_id_cb, "✅ Group Connected Successfully!")
+        return "OK"
+
+    # ======================
+    # PLAN CHECK
     # ======================
     if not has_active_plan(user_id):
         send_message(chat_id, "❌ Plan expired /buy")
         return "OK"
 
-    user_data = users.get(user_key, {})
+    # ======================
+    # GET GROUP
+    # ======================
+    user_data = users.get(str(user_id), {})
     group_id = user_data.get("group_id")
 
     if not group_id:
         return "OK"
 
-    # TEXT
+    # ======================
+    # FORWARD SYSTEM
+    # ======================
     if text:
         send_message(group_id, text)
 
-    # PHOTO
     elif "photo" in msg:
         requests.post(API + "/sendPhoto", json={
             "chat_id": group_id,
             "photo": msg["photo"][-1]["file_id"]
         })
 
-    # VIDEO
     elif "video" in msg:
         requests.post(API + "/sendVideo", json={
             "chat_id": group_id,
             "video": msg["video"]["file_id"]
         })
 
-    # DOCUMENT
     elif "document" in msg:
         requests.post(API + "/sendDocument", json={
             "chat_id": group_id,
