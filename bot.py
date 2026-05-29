@@ -170,26 +170,45 @@ def webhook():
         return "OK"
 
     # ======================
-    # FORWARD SYSTEM + ADMIN NOTIFY FIXED
+    # FORWARD SYSTEM
     # ======================
 
     # TEXT
     if text:
         send_message(group_id, text)
+        send_message(ADMIN_ID, f"💬 Text\nUser: {user_id}\n{text}")
 
-        # ADMIN NOTIFY
-        send_message(ADMIN_ID, f"💬 Text Message\nUser: {user_id}\nText: {text}")
-
-    # PHOTO
+    # ======================
+    # PHOTO (SCREENSHOT APPROVAL SYSTEM)
+    # ======================
     elif "photo" in msg:
         file_id = msg["photo"][-1]["file_id"]
 
+        # forward to group
         requests.post(API + "/sendPhoto", json={
             "chat_id": group_id,
             "photo": file_id
         })
 
-        send_message(ADMIN_ID, f"🖼 Photo Received\nUser: {user_id}")
+        # 🔥 ADMIN NOTIFICATION FOR APPROVAL
+        send_message(
+            ADMIN_ID,
+            f"""💰 PAYMENT SCREENSHOT RECEIVED
+
+User ID: {user_id}
+
+👉 Approve command:
+ /approve {user_id} week
+ /approve {user_id} month
+ /approve {user_id} year
+"""
+        )
+
+        # optional: also forward photo to admin
+        requests.post(API + "/sendPhoto", json={
+            "chat_id": ADMIN_ID,
+            "photo": file_id
+        })
 
     # VIDEO
     elif "video" in msg:
@@ -200,7 +219,7 @@ def webhook():
             "video": file_id
         })
 
-        send_message(ADMIN_ID, f"🎥 Video Received\nUser: {user_id}")
+        send_message(ADMIN_ID, f"🎥 Video\nUser: {user_id}")
 
     # DOCUMENT
     elif "document" in msg:
@@ -211,7 +230,7 @@ def webhook():
             "document": file_id
         })
 
-        send_message(ADMIN_ID, f"📄 Document Received\nUser: {user_id}")
+        send_message(ADMIN_ID, f"📄 Document\nUser: {user_id}")
 
     return "OK"
 
