@@ -1,3 +1,5 @@
+Replace your ENTIRE `bot.py` with this fixed version:
+
 import os
 import json
 from datetime import datetime, timedelta
@@ -16,7 +18,7 @@ ADMIN_ID = int(os.getenv("ADMIN_ID"))
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
 bot = Bot(token=TOKEN)
-app = Flask(__name__)
+app = Flask(**name**)
 
 USERS_FILE = "users.json"
 
