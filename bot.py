@@ -13,7 +13,6 @@ API = f"https://api.telegram.org/bot{TOKEN}"
 app = Flask(__name__)
 USERS_FILE = "users.json"
 
-
 # ======================
 # DB
 # ======================
@@ -171,41 +170,48 @@ def webhook():
         return "OK"
 
     # ======================
-    # FORWARD SYSTEM
+    # FORWARD SYSTEM + ADMIN NOTIFY FIXED
     # ======================
 
     # TEXT
     if text:
         send_message(group_id, text)
 
-    # PHOTO + ADMIN NOTIFY (FIX ADDED HERE)
-    elif "photo" in msg:
+        # ADMIN NOTIFY
+        send_message(ADMIN_ID, f"💬 Text Message\nUser: {user_id}\nText: {text}")
 
+    # PHOTO
+    elif "photo" in msg:
         file_id = msg["photo"][-1]["file_id"]
 
-        # send to group
         requests.post(API + "/sendPhoto", json={
             "chat_id": group_id,
             "photo": file_id
         })
 
-        # 🔥 ADMIN NOTIFICATION (FIX)
-        requests.post(API + "/sendMessage", json={
-            "chat_id": ADMIN_ID,
-            "text": f"💰 New Photo Sent\nUser: {user_id}"
-        })
+        send_message(ADMIN_ID, f"🖼 Photo Received\nUser: {user_id}")
 
+    # VIDEO
     elif "video" in msg:
+        file_id = msg["video"]["file_id"]
+
         requests.post(API + "/sendVideo", json={
             "chat_id": group_id,
-            "video": msg["video"]["file_id"]
+            "video": file_id
         })
 
+        send_message(ADMIN_ID, f"🎥 Video Received\nUser: {user_id}")
+
+    # DOCUMENT
     elif "document" in msg:
+        file_id = msg["document"]["file_id"]
+
         requests.post(API + "/sendDocument", json={
             "chat_id": group_id,
-            "document": msg["document"]["file_id"]
+            "document": file_id
         })
+
+        send_message(ADMIN_ID, f"📄 Document Received\nUser: {user_id}")
 
     return "OK"
 
