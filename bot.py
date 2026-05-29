@@ -4,49 +4,44 @@ import requests
 from datetime import datetime, timedelta
 from flask import Flask, request
 
-# ======================
-# CONFIG
-# ======================
 TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
-API_URL = f"https://api.telegram.org/bot{TOKEN}"
+API = f"https://api.telegram.org/bot{TOKEN}"
 
 app = Flask(__name__)
 USERS_FILE = "users.json"
 
+
 # ======================
-# INIT FILE
+# DB
 # ======================
 if not os.path.exists(USERS_FILE):
     with open(USERS_FILE, "w") as f:
         json.dump({}, f)
 
-# ======================
-# HELPERS
-# ======================
+
 def load_users():
     with open(USERS_FILE, "r") as f:
         return json.load(f)
+
 
 def save_users(data):
     with open(USERS_FILE, "w") as f:
         json.dump(data, f, indent=4)
 
-def send_message(chat_id, text):
-    requests.post(API_URL + "/sendMessage", json={
-        "chat_id": chat_id,
-        "text": text
-    })
 
-def send_photo(chat_id, photo, caption=None):
-    requests.post(API_URL + "/sendPhoto", data={
-        "chat_id": chat_id,
-        "caption": caption
-    }, files={
-        "photo": photo
-    })
+# ======================
+# SEND MESSAGE
+# ======================
+def send_message(chat_id, text, reply_markup=None):
+    payload = {"chat_id": chat_id, "text": text}
+    if reply_markup:
+        payload["reply_markup"] = json.dumps(reply_markup)
+
+    requests.post(API + "/sendMessage", json=payload)
+
 
 # ======================
 # PLAN CHECK
@@ -64,12 +59,14 @@ def has_active_plan(user_id):
 
     return datetime.now() < datetime.fromisoformat(expiry)
 
+
 # ======================
 # HOME
 # ======================
 @app.route("/", methods=["GET"])
 def home():
     return "BOT RUNNING"
+
 
 # ======================
 # WEBHOOK
@@ -78,138 +75,130 @@ def home():
 def webhook():
     data = request.get_json()
 
+    # ----------------------
+    # CALLBACK HANDLER FIRST
+    # ----------------------
+    if "callback_query" in data:
+        cq = data["callback_query"]
+        user_id = cq["from"]["id"]
+        data_cb = cq["data"]
+
+        if data_cb.startswith("connect_group:"):
+            group_id = int(data_cb.split(":")[1])
+
+            users = load_users()
+            users[str(user_id)] = users.get(str(user_id), {})
+            users[str(user_id)]["group_id"] = group_id
+            save_users(users)
+
+            send_message(user_id, "✅ Group Connected Successfully!")
+        return "OK"
+
     if "message" not in data:
         return "OK"
 
     msg = data["message"]
 
     user_id = msg["from"]["id"]
-    text = msg.get("text", "")
     chat_id = msg["chat"]["id"]
+    text = msg.get("text", "")
 
     users = load_users()
+    user_key = str(user_id)
 
     # ======================
     # START
     # ======================
     if text == "/start":
-        send_message(chat_id, """🇰🇭 សួស្តី!
-
-សូមវាយ:
-/buy ដើម្បីបើកគម្រោង
-
-សូមអរគុណ ❤️""")
+        send_message(chat_id,
+            "🇰🇭 សួស្តី!\n\n👉 វាយ /buy ដើម្បីចាប់ផ្តើម")
         return "OK"
 
     # ======================
     # BUY
     # ======================
     if text == "/buy":
-        with open("qr.png", "rb") as f:
-            send_photo(chat_id, f, """💳 គម្រោង
-
-1. 3$ / សប្តាហ៍
-2. 11.5$ / ខែ
-3. 120$ / ឆ្នាំ
-
-ផ្ញើ Screenshot មក Admin ❤️""")
+        send_message(chat_id,
+            "💳 គម្រោង:\n\n"
+            "1. 3$ / week\n"
+            "2. 11.5$ / month\n"
+            "3. 120$ / year\n\n"
+            "ផ្ញើ screenshot មក admin ❤️"
+        )
         return "OK"
 
     # ======================
-    # PAYMENT PROOF
+    # AUTO DETECT GROUP (NO -100 INPUT)
     # ======================
-    if "photo" in msg:
-        file_id = msg["photo"][-1]["file_id"]
+    if msg["chat"]["type"] in ["group", "supergroup"]:
 
-        send_message(ADMIN_ID, f"""💰 PAYMENT PROOF
+        group_id = chat_id
 
-USER: {user_id}
-NAME: {msg['from'].get('first_name','')}""")
+        keyboard = {
+            "inline_keyboard": [
+                [
+                    {
+                        "text": "✅ Connect This Group",
+                        "callback_data": f"connect_group:{group_id}"
+                    }
+                ]
+            ]
+        }
 
-        requests.post(API_URL + "/forwardMessage", data={
-            "chat_id": ADMIN_ID,
-            "from_chat_id": chat_id,
-            "message_id": msg["message_id"]
+        send_message(
+            chat_id,
+            "🤖 Bot detected this group\n\nចុចប៊ូតុងខាងក្រោមដើម្បីភ្ជាប់ group 👇",
+            reply_markup=keyboard
+        )
+
+        return "OK"
+
+    # ======================
+    # FORWARD SYSTEM
+    # ======================
+    if not has_active_plan(user_id):
+        send_message(chat_id, "❌ Plan expired /buy")
+        return "OK"
+
+    user_data = users.get(user_key, {})
+    group_id = user_data.get("group_id")
+
+    if not group_id:
+        return "OK"
+
+    # TEXT
+    if text:
+        send_message(group_id, text)
+
+    # PHOTO
+    elif "photo" in msg:
+        requests.post(API + "/sendPhoto", json={
+            "chat_id": group_id,
+            "photo": msg["photo"][-1]["file_id"]
         })
 
-        send_message(chat_id, "⏳ សូមរង់ចាំ Admin អនុម័ត")
-        return "OK"
+    # VIDEO
+    elif "video" in msg:
+        requests.post(API + "/sendVideo", json={
+            "chat_id": group_id,
+            "video": msg["video"]["file_id"]
+        })
 
-    # ======================
-    # APPROVE (ADMIN ONLY)
-    # ======================
-    if text.startswith("/approve"):
-        if user_id != ADMIN_ID:
-            return "OK"
-
-        try:
-            _, target_id, plan = text.split()
-
-            now = datetime.now()
-
-            if plan == "week":
-                expiry = now + timedelta(days=7)
-            elif plan == "month":
-                expiry = now + timedelta(days=30)
-            elif plan == "year":
-                expiry = now + timedelta(days=365)
-            else:
-                send_message(ADMIN_ID, "Plan មិនត្រឹមត្រូវ")
-                return "OK"
-
-            users[target_id] = {
-                "expiry": expiry.isoformat()
-            }
-
-            save_users(users)
-
-            send_message(int(target_id), f"""✅ APPROVED
-
-PLAN: {plan}
-EXPIRY: {expiry.strftime('%Y-%m-%d')}""")
-
-            send_message(ADMIN_ID, "APPROVED DONE ✅")
-
-        except Exception as e:
-            send_message(ADMIN_ID, str(e))
-
-        return "OK"
-
-    # ======================
-    # GROUP LINK
-    # ======================
-    if text.startswith("-100"):
-        if not has_active_plan(user_id):
-            send_message(chat_id, "❌ Plan ផុតកំណត់ សូម /buy")
-            return "OK"
-
-        users[str(user_id)] = users.get(str(user_id), {})
-        users[str(user_id)]["group_id"] = int(text)
-        save_users(users)
-
-        send_message(chat_id, "✅ Group Connected")
-        return "OK"
-
-    # ======================
-    # FORWARD MESSAGE
-    # ======================
-    if has_active_plan(user_id):
-        user_data = users.get(str(user_id), {})
-        group_id = user_data.get("group_id")
-
-        if group_id:
-            send_message(group_id, text)
-
-    else:
-        send_message(chat_id, "❌ Plan ផុតកំណត់ /buy")
+    # DOCUMENT
+    elif "document" in msg:
+        requests.post(API + "/sendDocument", json={
+            "chat_id": group_id,
+            "document": msg["document"]["file_id"]
+        })
 
     return "OK"
+
 
 # ======================
 # RUN
 # ======================
 if __name__ == "__main__":
     if WEBHOOK_URL:
-        requests.get(f"https://api.telegram.org/bot{TOKEN}/setWebhook?url={WEBHOOK_URL}/webhook")
+        requests.get(f"{API}/setWebhook?url={WEBHOOK_URL}/webhook")
 
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
