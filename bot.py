@@ -13,6 +13,7 @@ API = f"https://api.telegram.org/bot{TOKEN}"
 app = Flask(__name__)
 USERS_FILE = "users.json"
 
+
 # ======================
 # DB
 # ======================
@@ -65,6 +66,22 @@ def has_active_plan(user_id):
         return False
 
     return datetime.now() < datetime.fromisoformat(expiry)
+
+
+# ======================
+# AUTO GROUP DETECT (NEW)
+# ======================
+def auto_save_group(users, user_id, chat_id, chat_type):
+    if chat_type in ["group", "supergroup"]:
+        uid = str(user_id)
+
+        if uid not in users:
+            users[uid] = {}
+
+        # ONLY SAVE IF NOT EXISTS (prevents overwrite spam)
+        if "group_id" not in users[uid]:
+            users[uid]["group_id"] = chat_id
+            save_users(users)
 
 
 # ======================
@@ -121,20 +138,6 @@ def webhook():
             send_message(user_id, f"✅ Approved!\nPlan: {plan}")
             send_message(ADMIN_ID, "✅ User approved")
 
-        # CONNECT GROUP
-        if cb_data.startswith("group:"):
-            group_id = int(cb_data.split(":")[1])
-
-            uid = str(user_id_cb)
-
-            if uid not in users:
-                users[uid] = {}
-
-            users[uid]["group_id"] = group_id
-            save_users(users)
-
-            send_message(user_id_cb, "✅ Group Connected Successfully!")
-
         return "OK"
 
     # =====================================================
@@ -150,14 +153,15 @@ def webhook():
     text = msg.get("text", "")
     chat_type = msg["chat"]["type"]
 
+    # 🔥 AUTO SAVE GROUP (ADDED HERE - IMPORTANT)
+    auto_save_group(users, user_id, chat_id, chat_type)
+
     # START
     if text == "/start":
         send_message(chat_id, "🇰🇭 សួស្តី!\n👉 /buy")
         return "OK"
 
-    # ======================
-    # FIXED INDENTATION (/buy INSIDE FUNCTION)
-    # ======================
+    # BUY
     if text == "/buy":
         with open("qr.png", "rb") as f:
             requests.post(API + "/sendPhoto",
@@ -174,9 +178,7 @@ def webhook():
             )
         return "OK"
 
-    # ======================
-    # SCREENSHOT → ADMIN NOTIFY (FIXED)
-    # ======================
+    # SCREENSHOT → ADMIN
     if "photo" in msg:
         file_id = msg["photo"][-1]["file_id"]
 
@@ -201,30 +203,15 @@ def webhook():
         send_photo(ADMIN_ID, file_id)
         return "OK"
 
-    # ======================
-    # GROUP CONNECT
-    # ======================
-    if text == "/connect" and chat_type in ["group", "supergroup"]:
-        keyboard = {
-            "inline_keyboard": [[
-                {"text": "Connect Group", "callback_data": f"group:{chat_id}"}
-            ]]
-        }
-
-        send_message(chat_id, "👥 Connect group?", reply_markup=keyboard)
-        return "OK"
-
-    # ======================
     # FORWARD SYSTEM
-    # ======================
-    if not has_active_plan(user_id):
-        send_message(chat_id, "❌ Plan expired /buy")
-        return "OK"
-
     user_data = users.get(str(user_id), {})
     group_id = user_data.get("group_id")
 
     if not group_id:
+        return "OK"
+
+    if not has_active_plan(user_id):
+        send_message(chat_id, "❌ Plan expired /buy")
         return "OK"
 
     if text:
