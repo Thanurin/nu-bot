@@ -117,15 +117,21 @@ def webhook():
     # ======================
     # BUY
     # ======================
-    if text == "/buy":
-        send_message(chat_id,
-            "💳 គម្រោង:\n\n"
-            "1. 3$ / week\n"
-            "2. 11.5$ / month\n"
-            "3. 120$ / year\n\n"
-            "ផ្ញើ screenshot មក admin ❤️"
+if text == "/buy":
+    with open("qr.png", "rb") as f:
+        requests.post(API + "/sendPhoto",
+            data={
+                "chat_id": chat_id,
+                "caption":
+                    "💳 គម្រោង:\n\n"
+                    "1. 3$ / week\n"
+                    "2. 11.5$ / month\n"
+                    "3. 120$ / year\n\n"
+                    "ផ្ញើ Screenshot មក Admin ❤️"
+            },
+            files={"photo": f}
         )
-        return "OK"
+    return "OK"
 
     # ======================
     # AUTO DETECT GROUP (NO -100 INPUT)
