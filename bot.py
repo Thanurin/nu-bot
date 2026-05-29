@@ -51,7 +51,7 @@ def send_photo(chat_id, file_id, caption=None, reply_markup=None):
 
 
 # ======================
-# PLAN CHECK
+# PLAN CHECK (UNCHANGED)
 # ======================
 def has_active_plan(user_id):
     users = load_users()
@@ -112,12 +112,10 @@ def webhook():
 
             uid = str(user_id)
 
-            # 🔥 FIX: DO NOT DELETE EXISTING DATA
             if uid not in users:
                 users[uid] = {}
 
             users[uid]["expiry"] = expiry.isoformat()
-
             save_users(users)
 
             send_message(user_id, f"✅ Approved!\nPlan: {plan}")
@@ -157,27 +155,28 @@ def webhook():
         send_message(chat_id, "🇰🇭 សួស្តី!\n👉 /buy")
         return "OK"
 
-if text == "/buy":
-    with open("qr.png", "rb") as f:
-        requests.post(API + "/sendPhoto",
-            data={
-                "chat_id": chat_id,
-                "caption":
-                    "💳 PREMIUM PLANS\n\n"
-                    "🥉 1. WEEK PLAN\n"
-                    "💲 3$ / week\n\n"
-                    "🥈 2. MONTH PLAN\n"
-                    "💲 11.5$ / month\n\n"
-                    "🥇 3. YEAR PLAN\n"
-                    "💲 120$ / year\n\n"
-                    "📸 After payment, send screenshot here\n"
-                    "⏳ Admin will approve manually"
-            },
-            files={"photo": f}
-        )
-    return "OK"
+    # ======================
+    # FIXED INDENTATION (/buy INSIDE FUNCTION)
+    # ======================
+    if text == "/buy":
+        with open("qr.png", "rb") as f:
+            requests.post(API + "/sendPhoto",
+                data={
+                    "chat_id": chat_id,
+                    "caption":
+                        "💳 PREMIUM PLANS\n\n"
+                        "🥉 WEEK: $3\n"
+                        "🥈 MONTH: $11.5\n"
+                        "🥇 YEAR: $120\n\n"
+                        "📸 Send screenshot after payment"
+                },
+                files={"photo": f}
+            )
+        return "OK"
 
-    # SCREENSHOT → ADMIN + BUTTON
+    # ======================
+    # SCREENSHOT → ADMIN NOTIFY (FIXED)
+    # ======================
     if "photo" in msg:
         file_id = msg["photo"][-1]["file_id"]
 
@@ -200,10 +199,11 @@ if text == "/buy":
         )
 
         send_photo(ADMIN_ID, file_id)
-
         return "OK"
 
-    # CONNECT GROUP
+    # ======================
+    # GROUP CONNECT
+    # ======================
     if text == "/connect" and chat_type in ["group", "supergroup"]:
         keyboard = {
             "inline_keyboard": [[
@@ -214,7 +214,9 @@ if text == "/buy":
         send_message(chat_id, "👥 Connect group?", reply_markup=keyboard)
         return "OK"
 
+    # ======================
     # FORWARD SYSTEM
+    # ======================
     if not has_active_plan(user_id):
         send_message(chat_id, "❌ Plan expired /buy")
         return "OK"
