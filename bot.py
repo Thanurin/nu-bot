@@ -1,7 +1,7 @@
 import os
 import json
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import Flask, request
 
 TOKEN = os.getenv("BOT_TOKEN")
@@ -42,6 +42,19 @@ def send_message(chat_id, text, reply_markup=None):
     requests.post(API + "/sendMessage", json=payload)
 
 
+def send_photo(chat_id, file_id, caption=None, reply_markup=None):
+    payload = {
+        "chat_id": chat_id,
+        "photo": file_id,
+    }
+    if caption:
+        payload["caption"] = caption
+    if reply_markup:
+        payload["reply_markup"] = json.dumps(reply_markup)
+
+    requests.post(API + "/sendPhoto", json=payload)
+
+
 # ======================
 # PLAN CHECK
 # ======================
@@ -76,6 +89,43 @@ def webhook():
     if not data:
         return "OK"
 
+    users = load_users()
+
+    # ======================
+    # CALLBACK (ADMIN APPROVE BUTTON)
+    # ======================
+    if "callback_query" in data:
+        cq = data["callback_query"]
+        admin_action = cq["data"]
+
+        if admin_action.startswith("approve:"):
+            _, user_id, plan = admin_action.split(":")
+
+            now = datetime.now()
+
+            if plan == "week":
+                expiry = now + timedelta(days=7)
+            elif plan == "month":
+                expiry = now + timedelta(days=30)
+            elif plan == "year":
+                expiry = now + timedelta(days=365)
+            else:
+                send_message(ADMIN_ID, "❌ Invalid plan")
+                return "OK"
+
+            users[str(user_id)] = {
+                "expiry": expiry.isoformat()
+            }
+            save_users(users)
+
+            send_message(user_id, f"✅ Approved!\nPlan: {plan}\nExpire: {expiry.date()}")
+            send_message(ADMIN_ID, "✅ User approved successfully")
+
+        return "OK"
+
+    # ======================
+    # MESSAGE
+    # ======================
     if "message" not in data:
         return "OK"
 
@@ -86,17 +136,15 @@ def webhook():
     text = msg.get("text", "")
     chat_type = msg["chat"]["type"]
 
-    users = load_users()
-
     # ======================
     # START
     # ======================
     if text == "/start":
-        send_message(chat_id, "🇰🇭 សួស្តី!\n\n👉 វាយ /buy ដើម្បីចាប់ផ្តើម")
+        send_message(chat_id, "🇰🇭 សួស្តី!\n👉 វាយ /buy ដើម្បីទិញ plan")
         return "OK"
 
     # ======================
-    # BUY
+    # BUY (SEND QR)
     # ======================
     if text == "/buy":
         with open("qr.png", "rb") as f:
@@ -104,45 +152,76 @@ def webhook():
                 data={
                     "chat_id": chat_id,
                     "caption":
-                        "💳 គម្រោង:\n\n"
+                        "💳 Plans:\n"
                         "1. 3$ / week\n"
                         "2. 11.5$ / month\n"
                         "3. 120$ / year\n\n"
-                        "ផ្ញើ Screenshot មក Admin ❤️"
+                        "📸 Send payment screenshot after paying"
                 },
                 files={"photo": f}
             )
         return "OK"
 
     # ======================
+    # 📸 PAYMENT SCREENSHOT → ADMIN NOTIFY + APPROVE BUTTON
+    # ======================
+    if "photo" in msg:
+        file_id = msg["photo"][-1]["file_id"]
+
+        keyboard = {
+            "inline_keyboard": [
+                [
+                    {
+                        "text": "✅ Approve Week",
+                        "callback_data": f"approve:{user_id}:week"
+                    },
+                    {
+                        "text": "💳 Month",
+                        "callback_data": f"approve:{user_id}:month"
+                    }
+                ],
+                [
+                    {
+                        "text": "🏆 Year",
+                        "callback_data": f"approve:{user_id}:year"
+                    }
+                ]
+            ]
+        }
+
+        send_message(
+            ADMIN_ID,
+            f"💰 New Payment Screenshot\nUser ID: {user_id}",
+            reply_markup=keyboard
+        )
+
+        return "OK"
+
+    # ======================
     # GROUP CONNECT
     # ======================
     if text == "/connect" and chat_type in ["group", "supergroup"]:
-
         keyboard = {
             "inline_keyboard": [[
                 {
                     "text": "✅ Connect This Group",
-                    "callback_data": f"connect:{chat_id}"
+                    "callback_data": f"group:{chat_id}"
                 }
             ]]
         }
 
-        send_message(chat_id,
-            "🤖 Bot detected this group\nចុចប៊ូតុងខាងក្រោមដើម្បីភ្ជាប់ 👇",
-            reply_markup=keyboard
-        )
+        send_message(chat_id, "👥 Connect this group?", reply_markup=keyboard)
         return "OK"
 
     # ======================
-    # CALLBACK
+    # CALLBACK (GROUP SAVE)
     # ======================
     if "callback_query" in data:
         cq = data["callback_query"]
         user_id_cb = cq["from"]["id"]
         cb_data = cq["data"]
 
-        if cb_data.startswith("connect:"):
+        if cb_data.startswith("group:"):
             group_id = int(cb_data.split(":")[1])
 
             users[str(user_id_cb)] = users.get(str(user_id_cb), {})
@@ -154,83 +233,35 @@ def webhook():
         return "OK"
 
     # ======================
-    # PLAN CHECK
+    # FORWARD SYSTEM
     # ======================
     if not has_active_plan(user_id):
         send_message(chat_id, "❌ Plan expired /buy")
         return "OK"
 
-    # ======================
-    # GET GROUP
-    # ======================
     user_data = users.get(str(user_id), {})
     group_id = user_data.get("group_id")
 
     if not group_id:
         return "OK"
 
-    # ======================
-    # FORWARD SYSTEM
-    # ======================
-
-    # TEXT
     if text:
         send_message(group_id, text)
-        send_message(ADMIN_ID, f"💬 Text\nUser: {user_id}\n{text}")
 
-    # ======================
-    # PHOTO (SCREENSHOT APPROVAL SYSTEM)
-    # ======================
     elif "photo" in msg:
-        file_id = msg["photo"][-1]["file_id"]
+        send_photo(group_id, msg["photo"][-1]["file_id"])
 
-        # forward to group
-        requests.post(API + "/sendPhoto", json={
-            "chat_id": group_id,
-            "photo": file_id
-        })
-
-        # 🔥 ADMIN NOTIFICATION FOR APPROVAL
-        send_message(
-            ADMIN_ID,
-            f"""💰 PAYMENT SCREENSHOT RECEIVED
-
-User ID: {user_id}
-
-👉 Approve command:
- /approve {user_id} week
- /approve {user_id} month
- /approve {user_id} year
-"""
-        )
-
-        # optional: also forward photo to admin
-        requests.post(API + "/sendPhoto", json={
-            "chat_id": ADMIN_ID,
-            "photo": file_id
-        })
-
-    # VIDEO
     elif "video" in msg:
-        file_id = msg["video"]["file_id"]
-
         requests.post(API + "/sendVideo", json={
             "chat_id": group_id,
-            "video": file_id
+            "video": msg["video"]["file_id"]
         })
 
-        send_message(ADMIN_ID, f"🎥 Video\nUser: {user_id}")
-
-    # DOCUMENT
     elif "document" in msg:
-        file_id = msg["document"]["file_id"]
-
         requests.post(API + "/sendDocument", json={
             "chat_id": group_id,
-            "document": file_id
+            "document": msg["document"]["file_id"]
         })
-
-        send_message(ADMIN_ID, f"📄 Document\nUser: {user_id}")
 
     return "OK"
 
